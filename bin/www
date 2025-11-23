@@ -20,20 +20,54 @@ app.set("port", port);
  * Create HTTP server.
  */
 
+/**
+ * Create HTTP server.
+ */
+
 (async function () {
-  const { MongoClient } = require("mongodb");
-  const client = new MongoClient(
-    `mongodb://${config.mongo.host}:${config.mongo.client}/fastdelivery`
-  );
-  await client.connect();
-  app.use(function (req, res, next) {
-    req.db = client.db;
-    next();
-  });
-  const server = http.createServer(app);
-  server.listen(port);
-  server.on("error", onError);
-  server.on("listening", onListening);
+  const mongoose = require("mongoose");
+  
+  try {
+    // Connect to MongoDB using Mongoose
+    await mongoose.connect(config.mongo.uri, config.mongo.options);
+    
+    console.log(`Connected to MongoDB: ${config.mongo.database}`);
+    
+    // Initialize default settings if they don't exist
+    const { Settings } = require("../models/schemas");
+    await Settings.initializeDefaults();
+    
+    // Add mongoose instance to app for access in routes if needed
+    app.set('mongoose', mongoose);
+    
+    const server = http.createServer(app);
+    server.listen(port);
+    server.on("error", onError);
+    server.on("listening", onListening);
+    
+    // Graceful shutdown
+    process.on('SIGINT', async () => {
+      console.log('Received SIGINT. Graceful shutdown...');
+      server.close(async () => {
+        await mongoose.connection.close();
+        console.log('Database connection closed.');
+        process.exit(0);
+      });
+    });
+    
+    process.on('SIGTERM', async () => {
+      console.log('Received SIGTERM. Graceful shutdown...');
+      server.close(async () => {
+        await mongoose.connection.close();
+        console.log('Database connection closed.');
+        process.exit(0);
+      });
+    });
+    
+  } catch (error) {
+    console.error('Failed to connect to MongoDB:', error);
+    process.exit(1);
+  }
 })();
 /**
  * Listen on provided port, on all network interfaces.
